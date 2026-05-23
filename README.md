@@ -89,11 +89,15 @@ make install                   # Using pip directly
 # OR
 conda create --prefix ./.env && conda activate ./.env && pip install -r requirements.txt
 
-# 3. Run full demo
-make demo
+# 3. Install React UI dependencies
+npm install
+
+# 4. Run full stack (Flask API + React UI)
+make dev
 ```
 
-Then open **<http://localhost:5000>** for the SOC dashboard.
+Then open **<http://localhost:5173>** for the stunning cyberpunk SOC dashboard.
+(The raw Flask API runs on `localhost:5000`)
 
 ---
 
@@ -127,8 +131,12 @@ conda create --prefix ./.env
 conda activate ./.env
 pip install -r requirements.txt
 
-# Place canary files and start services
-make setup
+# Install React UI dependencies
+npm install
+
+# Start full stack (Flask API + React UI)
+make dev
+# Open http://localhost:5173 in your browser
 
 # In a new terminal — launch slow attack (best for demo)
 make attack-slow
@@ -136,7 +144,10 @@ make attack-slow
 # View alerts
 make status
 
-# Reset everything
+# Stop all services when done
+make stop
+
+# Reset everything (deletes logs and vault)
 make reset
 
 # Deactivate when done
@@ -150,13 +161,16 @@ conda deactivate
 | Command              | Description                                              |
 |----------------------|----------------------------------------------------------|
 | `make install`       | `pip install -r requirements.txt`                        |
-| `make setup`         | Run canary_placer.py + start daemon + dashboard          |
+| `make setup`         | Run canary_placer.py + start daemon + Flask dashboard    |
+| `make ui`            | Start the React SOC dashboard (Vite on port 5173)        |
+| `make dev`           | Full stack: setup + ui (`localhost:5173`)                |
 | `make attack`        | Simulator at normal speed (350ms/file)                   |
 | `make attack-slow`   | Simulator at slow speed (900ms/file) ← **demo mode**    |
 | `make attack-fast`   | Simulator at fast speed (50ms/file)                      |
 | `make status`        | Show last 10 alerts from alerts.json                     |
-| `make logs`          | Stream `ransomwatch_activity.log`                        |
-| `make reset`         | Kill all PIDs, delete vault, re-run setup                |
+| `make logs`          | Stream both activity logs                                |
+| `make stop`          | Kill daemon + dashboard + UI (no auto-restart)           |
+| `make reset`         | stop + delete all runtime files                          |
 | `make demo`          | Full scripted demo: setup → 3s → attack-slow             |
 | `make integrity`     | One-off SHA-256 integrity check                          |
 | `make docker-build`  | `docker compose build`                                   |
