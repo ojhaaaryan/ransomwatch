@@ -82,18 +82,18 @@ dark-themed SOC dashboard.
 
 ```bash
 # 1. Clone
-git clone https://github.com/your-org/ransomwatch.git && cd ransomwatch
+git clone https://github.com/ojhaaaryan/Cyber_Hackathon.git && cd Cyber_Hackathon
 
 # 2. Install (choose one)
 make install                   # Using pip directly
 # OR
-conda env create -f environment.yml && conda activate ransomwatch
+conda create --prefix ./.env && conda activate ./.env && pip install -r requirements.txt
 
 # 3. Run full demo
 make demo
 ```
 
-Then open **http://localhost:5000** for the SOC dashboard.
+Then open **<http://localhost:5000>** for the SOC dashboard.
 
 ---
 
@@ -122,9 +122,10 @@ docker compose down -v
 ## 🐍 Miniconda Quick Start
 
 ```bash
-# Create and activate conda environment
-conda env create -f environment.yml
-conda activate ransomwatch
+# Create a local conda environment in .env/ (prefix-based, no global name clash)
+conda create --prefix ./.env
+conda activate ./.env
+pip install -r requirements.txt
 
 # Place canary files and start services
 make setup
@@ -168,26 +169,31 @@ conda deactivate
 ## 🔍 How It Works
 
 ### Phase 1 — Reconnaissance (T1083)
+
 The simulator walks `test_vault/` recursively, building a target file list by extension
 (`.xlsx`, `.docx`, `.pdf`, `.db`, `.bak`). This mirrors real ransomware enumeration behaviour.
 
 ### Phase 2 — Key Generation
+
 - AES-256 session key generated via `os.urandom(32)` (cryptographically secure CSPRNG)
 - RSA-2048 key pair generated locally to simulate C2 key exchange
 - AES session key wrapped with RSA-OAEP-SHA256 (attacker holds private key → victim cannot recover AES key)
 
 ### Phase 3 — Encryption (T1486 ← PRIMARY)
+
 - Each file encrypted with AES-256-CBC using a **fresh random IV per file**
 - PKCS7 padding applied for non-block-aligned plaintext
 - Original file deleted; `.locked` extension appended
 - Per-file IV prepended to ciphertext in `.locked` file
 
 ### Phase 4 — Impact (T1490, T1491)
+
 - `RANSOM_NOTE.txt` dropped in every directory
 - VSS shadow deletion simulated (logged, no actual system call — safety)
 - Canary files touched via `Path.touch()` → this fires `IN_MODIFY` inotify events
 
 ### Defender — Detection Pipeline
+
 1. `watchdog.Observer` fires on any canary path event
 2. Offending PID identified via `psutil.process_iter(open_files)`
 3. `SIGKILL` sent via `os.kill(pid, signal.SIGKILL)`
@@ -197,7 +203,9 @@ The simulator walks `test_vault/` recursively, building a target file list by ex
 7. Rich terminal panel displayed
 
 ### Integrity Monitor (bypass detection)
+
 Every 30 seconds, `IntegrityMonitor.run_once()`:
+
 1. Opens each canary file via raw `os.open()` (harder to hook than `open()`)
 2. Computes SHA-256
 3. Compares against `canary_manifest.json` baseline
@@ -222,6 +230,7 @@ Adversaries may encrypt data on target systems to interrupt availability.
 [→ attack.mitre.org/techniques/T1486](https://attack.mitre.org/techniques/T1486)
 
 **Key Mitigations:**
+
 - **M1053 — Data Backup:** Maintain offline backups inaccessible to ransomware
 - **M1040 — Behavior Prevention on Endpoint:** HIPS/EDR that detects mass file modification
 - **M1028 — OS Configuration:** Restrict VSS deletion to admin accounts only
@@ -233,16 +242,19 @@ Adversaries may encrypt data on target systems to interrupt availability.
 See [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) for full STRIDE analysis.
 
 **Assets:**
+
 - Finance files (PII, revenue data, invoices)
 - HR records (salary, SSNs, NDAs)
 - Engineering source code and architecture
 - Legal contracts and litigation notes
 
 **Threat Actors:**
+
 - Financially motivated ransomware groups (REvil, LockBit, ALPHV/BlackCat)
 - Initial access via phishing, RDP brute-force, VPN vulnerabilities
 
 **Impact:**
+
 - Complete file system encryption → operational shutdown
 - VSS deletion → no local recovery path
 - Ransom demand → financial impact
