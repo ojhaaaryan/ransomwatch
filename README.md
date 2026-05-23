@@ -82,7 +82,7 @@ dark-themed SOC dashboard.
 
 ```bash
 # 1. Clone
-git clone https://github.com/ojhaaaryan/Cyber_Hackathon.git && cd Cyber_Hackathon
+git clone https://github.com/ojhaaaryan/ransomwatch.git && cd ransomwatch
 
 # 2. Install (choose one)
 make install                   # Using pip directly
