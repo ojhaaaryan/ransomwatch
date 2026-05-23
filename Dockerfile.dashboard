@@ -1,0 +1,35 @@
+# ============================================================
+# Dockerfile.dashboard — RansomWatch Flask Dashboard Container
+# Serves the SOC dashboard on port 5000
+# ============================================================
+FROM python:3.11-slim-bookworm
+
+LABEL maintainer="RansomWatch Team"
+LABEL description="Flask SOC dashboard for RansomWatch canary detection system"
+
+# No system packages needed for the dashboard
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        wget \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN useradd -m -u 1001 dashboard
+WORKDIR /app
+
+# Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy dashboard code only
+COPY dashboard/ ./dashboard/
+
+# Pre-create empty files (will be overridden by volume mounts)
+RUN mkdir -p test_vault && touch alerts.json canary_manifest.json
+
+RUN chown -R dashboard:dashboard /app
+
+USER dashboard
+
+EXPOSE 5000
+
+ENTRYPOINT ["python3"]
+CMD ["dashboard/app.py", "--host", "0.0.0.0", "--port", "5000"]

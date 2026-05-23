@@ -1,0 +1,106 @@
+# ============================================================
+# docker-compose.yml — RansomWatch Container Orchestration
+# ============================================================
+# Two services:
+#   defender   — Runs canary_daemon.py + integrity_monitor.py
+#   dashboard  — Runs Flask SOC dashboard on port 5000
+#
+# Shared volumes:
+#   ./test_vault           — The simulated file server
+#   ./alerts.json          — Shared alert store (atomic writes)
+#   ./canary_manifest.json — Canary metadata (read-only by dashboard)
+#
+# Security notes:
+#   defender requires SYS_PTRACE (for psutil open-file inspection)
+#   defender shares host PID namespace (for cross-process SIGKILL)
+#   dashboard has no elevated capabilities
+
+version: "3.9"
+
+services:
+
+  # ── Defender service ────────────────────────────────────────
+  defender:
+    build:
+      context: .
+      dockerfile: Dockerfile.defender
+    container_name: ransomwatch-defender
+    restart: unless-stopped
+    volumes:
+      # Shared file vault — both services need read/write access
+      - ./test_vault:/app/test_vault
+      # Shared alert store — defender writes, dashboard reads
+      - ./alerts.json:/app/alerts.json
+      # Canary manifest — created by canary_placer.py on host
+      - ./canary_manifest.json:/app/canary_manifest.json
+      # Activity log — useful for debugging
+      - ./ransomwatch_activity.log:/app/ransomwatch_activity.log
+    cap_add:
+      # Required for psutil to enumerate open file handles of other processes
+      - SYS_PTRACE
+    pid: "host"
+      # Share host PID namespace so SIGKILL can reach the simulator process
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app
+    working_dir: /app
+    command: >
+      sh -c "
+        python3 canary_placer.py &&
+        python3 defender/canary_daemon.py
+          --manifest canary_manifest.json
+          --alerts   alerts.json
+          --vault    test_vault
+      "
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import json; json.load(open('canary_manifest.json'))"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # ── Dashboard service ────────────────────────────────────────
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    container_name: ransomwatch-dashboard
+    restart: unless-stopped
+    ports:
+      # SOC dashboard accessible on host machine
+      - "5000:5000"
+    volumes:
+      # Read-only access to vault for file counting
+      - ./test_vault:/app/test_vault:ro
+      # Shared alert store — dashboard reads alerts written by defender
+      - ./alerts.json:/app/alerts.json:ro
+      # Canary manifest — for dashboard display of canary metadata
+      - ./canary_manifest.json:/app/canary_manifest.json:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app
+      - FLASK_ENV=production
+      # Override file paths via environment variables
+      - ALERTS_PATH=/app/alerts.json
+      - VAULT_ROOT=/app/test_vault
+      - MANIFEST_PATH=/app/canary_manifest.json
+    working_dir: /app
+    command: >
+      python3 dashboard/app.py
+        --host 0.0.0.0
+        --port 5000
+    depends_on:
+      defender:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+# ── Named volumes (optional external shared data) ────────────
+# Uncomment if you want persistent named volumes instead of bind mounts:
+# volumes:
+#   vault_data: {}
+#   alert_data: {}

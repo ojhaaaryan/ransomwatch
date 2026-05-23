@@ -1,0 +1,43 @@
+# ============================================================
+# environment.yml — Miniconda/Anaconda Environment
+# Creates a fully isolated Python 3.11 environment for RansomWatch
+#
+# Usage:
+#   conda env create -f environment.yml
+#   conda activate ransomwatch
+#   make demo
+#
+# To update after pulling new code:
+#   conda env update -f environment.yml --prune
+#
+# To remove the environment:
+#   conda deactivate
+#   conda env remove -n ransomwatch
+# ============================================================
+
+name: ransomwatch
+
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  # Python version — must be 3.10+ (type hints used throughout)
+  - python=3.11
+
+  # ── Conda-managed packages ────────────────────────────────────
+  # pip is required to install packages not available in conda
+  - pip
+
+  # ── Pip-managed packages (installed via pip within conda env) ─
+  - pip:
+    # Cryptography (AES-256-CBC, RSA-2048) — NOT pycryptodome
+    - cryptography==42.0.5
+    # Filesystem event monitoring (inotify on Linux)
+    - watchdog==4.0.1
+    # Process inspection for PID identification
+    - psutil==5.9.8
+    # Web framework for SOC dashboard
+    - flask==3.0.3
+    # Coloured terminal output for canary_daemon
+    - rich==13.7.1

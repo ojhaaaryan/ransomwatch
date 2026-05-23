@@ -1,0 +1,25 @@
+# ============================================================
+# requirements.txt — RansomWatch Python Dependencies
+# Pinned versions for reproducible installs (< 5 min on avg connection)
+# Compatible with Python 3.10+ on Ubuntu 24.04 / Arch Linux
+# ============================================================
+
+# ── Cryptography (AES-256-CBC, RSA-2048, OAEP) ───────────────
+# The cryptography library — NOT pycryptodome (per hackathon spec)
+cryptography==42.0.5
+
+# ── Filesystem event monitoring (inotify on Linux) ────────────
+watchdog==4.0.1
+
+# ── Process inspection (PID identification, SIGKILL) ──────────
+psutil==5.9.8
+
+# ── Web dashboard (Flask only, not FastAPI) ───────────────────
+flask==3.0.3
+
+# ── Rich terminal output (coloured alerts in canary_daemon) ───
+rich==13.7.1
+
+# ── Type stubs (optional, improves IDE support) ───────────────
+# Uncomment if you need type checking in your IDE:
+# types-psutil==5.9.5.20240516

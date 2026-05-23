@@ -1,0 +1,46 @@
+# ============================================================
+# Dockerfile.defender — RansomWatch Defender Container
+# Runs: canary_placer.py + canary_daemon.py + integrity_monitor.py
+# ============================================================
+FROM python:3.11-slim-bookworm
+
+# Metadata
+LABEL maintainer="RansomWatch Team"
+LABEL description="Canary file watchdog defender for MITRE T1486 detection"
+
+# System dependencies:
+#   inotify-tools — for inotify event debugging (not required by watchdog)
+#   procps        — provides ps, used for debugging
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        inotify-tools \
+        procps        \
+        gcc           \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user (defender doesn't need to run as root
+# for watchdog; SYS_PTRACE is set at container level)
+RUN useradd -m -u 1000 defender
+WORKDIR /app
+
+# Install Python dependencies first (layer caching)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY canary_placer.py .
+COPY ransomware_sim/ ./ransomware_sim/
+COPY defender/       ./defender/
+COPY dashboard/      ./dashboard/
+
+# Pre-create files that will be volume-mounted
+RUN touch alerts.json ransomwatch_activity.log
+
+# Ownership
+RUN chown -R defender:defender /app
+
+# Switch to non-root for runtime
+# (Note: SYS_PTRACE capability is granted at container level by docker-compose)
+USER defender
+
+ENTRYPOINT ["python3"]
+CMD ["defender/canary_daemon.py"]

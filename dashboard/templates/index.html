@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<!--
+  dashboard/templates/index.html — RansomWatch SOC Dashboard
+  Dark-themed, Chart.js-powered real-time SOC dashboard.
+  Auto-refreshes every 2 seconds via JavaScript fetch().
+  MITRE ATT&CK T1486 visual mapping included.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RansomWatch — SOC Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --green:  #00ff41;
+      --red:    #ff0040;
+      --amber:  #ffaa00;
+      --blue:   #00d4ff;
+      --purple: #9b59b6;
+      --bg:     #030a03;
+      --surface:#050f05;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--green);
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      overflow-x: hidden;
+    }
+    /* Header */
+    .header {
+      background: #020802;
+      border-bottom: 1px solid #00ff4130;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .logo {
+      font-size: 22px;
+      font-weight: bold;
+      letter-spacing: 0.2em;
+      text-shadow: 0 0 10px #00ff41;
+    }
+    .badge {
+      background: #ff004020;
+      border: 1px solid #ff004060;
+      color: #ff0040;
+      padding: 4px 12px;
+      font-size: 11px;
+      letter-spacing: 0.15em;
+      border-radius: 3px;
+    }
+    .clock { font-size: 18px; text-shadow: 0 0 8px #00ff41; letter-spacing: 0.15em; }
+    /* Grid */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      padding: 12px 16px;
+    }
+    .grid-2 { grid-template-columns: repeat(2, 1fr); }
+    .grid-3 { grid-template-columns: repeat(3, 1fr); }
+    /* Cards */
+    .card {
+      background: #050f0580;
+      border: 1px solid #00ff4120;
+      border-radius: 4px;
+      padding: 14px;
+      position: relative;
+      overflow: hidden;
+    }
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0;
+      width: 10px; height: 10px;
+      border-top: 2px solid #00ff41;
+      border-left: 2px solid #00ff41;
+    }
+    .card::after {
+      content: '';
+      position: absolute;
+      bottom: 0; right: 0;
+      width: 10px; height: 10px;
+      border-bottom: 2px solid #00ff41;
+      border-right: 2px solid #00ff41;
+    }
+    .card-label {
+      font-size: 10px;
+      letter-spacing: 0.2em;
+      color: #00ff4180;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    .card-value {
+      font-size: 32px;
+      font-weight: bold;
+      text-shadow: 0 0 10px currentColor;
+    }
+    .card-sub { font-size: 10px; opacity: 0.5; margin-top: 4px; }
+    /* Status colours */
+    .c-green  { color: #00ff41; }
+    .c-red    { color: #ff0040; }
+    .c-amber  { color: #ffaa00; }
+    .c-blue   { color: #00d4ff; }
+    .c-purple { color: #9b59b6; }
+    /* Status indicator */
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      border-radius: 20px;
+      border: 1px solid currentColor;
+      font-size: 12px;
+      font-weight: bold;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+    /* Alert cards */
+    .alert-card {
+      background: #ff004008;
+      border: 1px solid #ff004040;
+      border-radius: 4px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      animation: slide-in 0.3s ease;
+    }
+    @keyframes slide-in {
+      from { transform: translateX(30px); opacity: 0; }
+      to   { transform: none; opacity: 1; }
+    }
+    .alert-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .alert-title { color: #ff0040; font-weight: bold; font-size: 12px; }
+    .alert-time  { color: #00ff4160; font-size: 10px; }
+    .alert-grid  { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+    .alert-kv label { color: #00ff4140; font-size: 9px; letter-spacing: 0.15em; display: block; }
+    .alert-kv span  { font-size: 11px; }
+    /* Panel */
+    .panel { padding: 12px 16px; }
+    .panel-title {
+      font-size: 11px;
+      letter-spacing: 0.2em;
+      color: #00ff41;
+      text-transform: uppercase;
+      text-shadow: 0 0 6px #00ff41;
+      margin-bottom: 10px;
+      border-bottom: 1px solid #00ff4115;
+      padding-bottom: 6px;
+    }
+    /* MITRE table */
+    .mitre-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    .mitre-table th {
+      text-align: left;
+      color: #00ff4160;
+      font-size: 9px;
+      letter-spacing: 0.2em;
+      padding: 4px 8px;
+      border-bottom: 1px solid #00ff4115;
+    }
+    .mitre-table td { padding: 5px 8px; border-bottom: 1px solid #00ff4108; }
+    .mitre-id { color: #00d4ff; font-weight: bold; }
+    .mitre-active { background: #ff004015; }
+    .mitre-badge {
+      display: inline-block;
+      background: #ff004020;
+      color: #ff0040;
+      border: 1px solid #ff004040;
+      border-radius: 3px;
+      padding: 1px 6px;
+      font-size: 9px;
+      font-weight: bold;
+    }
+    /* Scrollable */
+    .scroll { overflow-y: auto; max-height: 300px; }
+    /* Divider */
+    hr { border: none; border-top: 1px solid #00ff4115; margin: 6px 0; }
+    /* Blink */
+    @keyframes blink { 0%,100% { opacity:1; } 50% { opacity:0; } }
+    .blink { animation: blink 1s step-end infinite; }
+    /* Latency colour */
+    .lat-good { color: #00ff41; }
+    .lat-warn { color: #ffaa00; }
+    .lat-bad  { color: #ff0040; }
+    /* Kill confirm */
+    .kill-confirm { color: #00ff41; font-size: 10px; margin-top: 4px; }
+    /* Chart container */
+    .chart-wrap { height: 200px; position: relative; }
+    canvas { max-height: 100% !important; }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div>
+    <div class="logo c-green">◈ RANSOMWATCH</div>
+    <div style="font-size:10px;color:#00ff4160;letter-spacing:0.2em">
+      CANARY-BASED RANSOMWARE DETECTION — MITRE ATT&CK T1486
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:16px">
+    <span id="status-pill" class="status-pill c-green">
+      <span class="dot blink"></span>
+      <span id="status-text">ARMED</span>
+    </span>
+    <div class="badge">T1486 — DATA ENCRYPTED FOR IMPACT</div>
+    <div class="clock" id="clock">00:00:00</div>
+  </div>
+</div>
+
+<!-- Stat cards -->
+<div class="grid" style="padding-top:14px">
+  <div class="card">
+    <div class="card-label">Total Files</div>
+    <div class="card-value c-blue" id="stat-total">0</div>
+    <div class="card-sub">in test_vault/</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Files Saved</div>
+    <div class="card-value c-green" id="stat-saved">0</div>
+    <div class="card-sub">protected by SIGKILL</div>
+  </div>
+  <div class="card" style="border-color:#ff004030">
+    <div class="card-label">Files Encrypted</div>
+    <div class="card-value c-red" id="stat-encrypted">0</div>
+    <div class="card-sub">.locked files</div>
+  </div>
+  <div class="card" style="border-color:#ffaa0030">
+    <div class="card-label">Alerts Raised</div>
+    <div class="card-value c-amber" id="stat-alerts">0</div>
+    <div class="card-sub">canaries triggered</div>
+  </div>
+</div>
+
+<!-- Charts + Alerts -->
+<div class="grid grid-3" style="padding-top:0">
+
+  <!-- Live bar chart -->
+  <div class="card" style="padding:14px">
+    <div class="panel-title">◈ LIVE FILE STATUS</div>
+    <div class="chart-wrap">
+      <canvas id="bar-chart"></canvas>
+    </div>
+    <hr>
+    <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:10px">
+      <span class="c-blue">Detection avg: <b id="avg-lat">—</b>ms</span>
+      <span class="c-green">Fastest: <b id="min-lat">—</b>ms</span>
+    </div>
+  </div>
+
+  <!-- Alert timeline -->
+  <div class="card">
+    <div class="panel-title">◈ ALERT TIMELINE
+      <span style="float:right;color:#ff004060" id="alert-count-badge">0 events</span>
+    </div>
+    <div id="alert-feed" class="scroll"></div>
+  </div>
+
+  <!-- MITRE ATT&CK table -->
+  <div class="card">
+    <div class="panel-title">◈ MITRE ATT&CK CHAIN</div>
+    <table class="mitre-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>NAME</th>
+          <th>TACTIC</th>
+          <th>STATUS</th>
+        </tr>
+      </thead>
+      <tbody id="mitre-tbody">
+        <tr>
+          <td class="mitre-id">T1566</td>
+          <td>Spearphishing</td>
+          <td style="color:#ff4400">Initial Access</td>
+          <td style="color:#00ff4160">simulated</td>
+        </tr>
+        <tr>
+          <td class="mitre-id">T1059</td>
+          <td>Script Execution</td>
+          <td style="color:#9b59b6">Execution</td>
+          <td id="t1059-status" style="color:#00ff4160">simulated</td>
+        </tr>
+        <tr>
+          <td class="mitre-id">T1083</td>
+          <td>Directory Discovery</td>
+          <td style="color:#00d4ff">Discovery</td>
+          <td id="t1083-status" style="color:#00ff4160">—</td>
+        </tr>
+        <tr class="mitre-active">
+          <td class="mitre-id">T1486</td>
+          <td><b>Data Encrypted</b> <span class="mitre-badge">PRIMARY</span></td>
+          <td style="color:#ff0040">Impact</td>
+          <td id="t1486-status" style="color:#ff004080">—</td>
+        </tr>
+        <tr>
+          <td class="mitre-id">T1490</td>
+          <td>Inhibit Recovery</td>
+          <td style="color:#ff0040">Impact</td>
+          <td id="t1490-status" style="color:#00ff4160">—</td>
+        </tr>
+        <tr>
+          <td class="mitre-id">T1491</td>
+          <td>Ransom Note</td>
+          <td style="color:#ff0040">Impact</td>
+          <td id="t1491-status" style="color:#00ff4160">—</td>
+        </tr>
+      </tbody>
+    </table>
+    <hr style="margin-top:10px">
+    <div style="font-size:10px;color:#00ff4140;margin-top:8px">
+      Mitigations: M1053 (Data Backup) · M1040 (Behavior Prevention) · M1028 (OS Config)
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Clock ──────────────────────────────────────────────────────────────────
+function updateClock() {
+  const now = new Date();
+  const pad = n => String(n).padStart(2,'0');
+  document.getElementById('clock').textContent =
+    `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ── Bar chart ──────────────────────────────────────────────────────────────
+const barCtx = document.getElementById('bar-chart').getContext('2d');
+const barChart = new Chart(barCtx, {
+  type: 'bar',
+  data: {
+    labels: ['TOTAL', 'SAVED', 'ENCRYPTED', 'CANARIES'],
+    datasets: [{
+      data:            [0, 0, 0, {{ canary_count }}],
+      backgroundColor: ['#00d4ff30', '#00ff4130', '#ff004030', '#ffaa0030'],
+      borderColor:     ['#00d4ff',   '#00ff41',   '#ff0040',   '#ffaa00'  ],
+      borderWidth: 1.5,
+      borderRadius: 3,
+    }],
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false }, tooltip: {
+      backgroundColor: '#050f05',
+      borderColor: '#00ff4130',
+      borderWidth: 1,
+      titleColor: '#00ff4180',
+      bodyColor: '#00ff41',
+      bodyFont: { family: 'Courier New' },
+    }},
+    scales: {
+      x: { ticks: { color: '#00ff4160', font: { size: 10 } }, grid: { color: '#00ff4108' } },
+      y: { ticks: { color: '#00ff4160', font: { size: 10 } }, grid: { color: '#00ff4108' } },
+    },
+  },
+});
+
+// ── Poll API ───────────────────────────────────────────────────────────────
+let lastAlertCount = 0;
+
+async function fetchStats() {
+  try {
+    const r = await fetch('/api/stats');
+    const s = await r.json();
+
+    document.getElementById('stat-total').textContent     = s.total;
+    document.getElementById('stat-saved').textContent     = s.saved;
+    document.getElementById('stat-encrypted').textContent = s.encrypted;
+    document.getElementById('stat-alerts').textContent    = s.alerts_count;
+
+    barChart.data.datasets[0].data = [s.total, s.saved, s.encrypted, s.canaries_active];
+    barChart.update();
+
+    if (s.fastest_detection_ms) {
+      document.getElementById('min-lat').textContent = s.fastest_detection_ms;
+      document.getElementById('avg-lat').textContent = s.avg_detection_ms;
+    }
+
+    // MITRE status updates
+    if (s.total > 0)        document.getElementById('t1083-status').textContent = '✓ executed';
+    if (s.encrypted > 0)    document.getElementById('t1486-status').textContent = '⚡ ACTIVE';
+    if (s.ransom_note_dropped) {
+      document.getElementById('t1490-status').textContent = '✓ simulated';
+      document.getElementById('t1491-status').textContent = '✓ dropped';
+    }
+
+    // System status
+    const pill     = document.getElementById('status-pill');
+    const statusTx = document.getElementById('status-text');
+    if (s.alerts_count > 0 && s.encrypted === 0) {
+      pill.style.color = '#ffaa00'; statusTx.textContent = 'CONTAINED';
+    } else if (s.encrypted > 0 || s.alerts_count > 0) {
+      pill.style.color = '#ff0040'; statusTx.textContent = 'TRIGGERED';
+    } else {
+      pill.style.color = '#00ff41'; statusTx.textContent = 'ARMED';
+    }
+  } catch(e) {
+    console.warn('Stats fetch error:', e);
+  }
+}
+
+async function fetchAlerts() {
+  try {
+    const r = await fetch('/api/alerts');
+    const alerts = await r.json();
+
+    document.getElementById('alert-count-badge').textContent = `${alerts.length} event${alerts.length !== 1 ? 's' : ''}`;
+
+    if (alerts.length !== lastAlertCount) {
+      lastAlertCount = alerts.length;
+      renderAlerts(alerts);
+    }
+  } catch(e) {
+    console.warn('Alerts fetch error:', e);
+  }
+}
+
+function renderAlerts(alerts) {
+  const feed = document.getElementById('alert-feed');
+  if (alerts.length === 0) {
+    feed.innerHTML = '<div style="text-align:center;color:#00ff4130;padding:20px;font-size:12px">NO ALERTS — MONITORING ACTIVE</div>';
+    return;
+  }
+
+  const html = [...alerts].reverse().map(a => {
+    const ts  = new Date(a.timestamp).toLocaleTimeString('en-US', {hour12:false});
+    const lat = a.detection_ms || a.detectionLatencyMs || 0;
+    const latClass = lat < 500 ? 'lat-good' : lat < 1200 ? 'lat-warn' : 'lat-bad';
+    const severity = a.severity || 'HIGH';
+    const sevColor = {LOW:'#00ff41',MEDIUM:'#ffaa00',HIGH:'#ff4400',CRITICAL:'#ff0040'}[severity] || '#ff0040';
+
+    return `<div class="alert-card">
+      <div class="alert-header">
+        <span class="alert-title">⚡ ${(a.canary_path||'').split('/').pop()}</span>
+        <span class="alert-time">${ts}</span>
+      </div>
+      <div class="alert-grid">
+        <div class="alert-kv"><label>PID KILLED</label><span class="c-red">#${a.offending_pid||'—'}</span></div>
+        <div class="alert-kv"><label>PROCESS</label><span class="c-amber">${a.process_name||'—'}</span></div>
+        <div class="alert-kv"><label>LATENCY</label><span class="${latClass}">${lat}ms</span></div>
+        <div class="alert-kv"><label>ENCRYPTED</label><span class="c-red">${a.files_encrypted||0}</span></div>
+        <div class="alert-kv"><label>SAVED</label><span class="c-green">${a.files_saved||0}</span></div>
+        <div class="alert-kv"><label>SEVERITY</label><span style="color:${sevColor};font-weight:bold">${severity}</span></div>
+      </div>
+      ${a.process_killed ? '<div class="kill-confirm">✓ SIGKILL confirmed — process terminated</div>' : ''}
+    </div>`;
+  }).join('');
+
+  feed.innerHTML = html;
+}
+
+// Start polling
+setInterval(fetchStats,  2000);
+setInterval(fetchAlerts, 2000);
+fetchStats();
+fetchAlerts();
+</script>
+</body>
+</html>
