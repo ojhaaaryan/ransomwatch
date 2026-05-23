@@ -1,0 +1,120 @@
+# ============================================================
+# .gitignore — RansomWatch
+# Python + Node.js + Docker + runtime artefacts
+# ============================================================
+
+# ── Runtime / generated files ─────────────────────────────────
+test_vault/
+canary_manifest.json
+alerts.json
+alerts.tmp
+ransomware_activity.log
+ransomwatch_activity.log
+defender.log
+RANSOM_NOTE.txt
+*.locked
+*.iv
+
+# PID files written by Makefile
+.daemon.pid
+.dashboard.pid
+
+# ── Python ───────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+*.so
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+.env
+
+# Pytest / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.coveragerc
+coverage.xml
+nosetests.xml
+test-results.xml
+
+# mypy / pyright / ruff
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pytype/
+.ruff_cache/
+
+# ── Node.js / Vite ────────────────────────────────────────────
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Vite cache
+.vite/
+
+# npm / yarn / pnpm lockfiles (keep package-lock.json, ignore others)
+yarn.lock
+pnpm-lock.yaml
+.yarn/
+.pnp.*
+
+# ── OS artefacts ──────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# ── Editor / IDE ──────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+*.sublime-workspace
+*.sublime-project
+
+# ── Docker ────────────────────────────────────────────────────
+# Don't ignore compose files — they're part of the project
+# Ignore local override files
+docker-compose.override.yml
+docker-compose.local.yml
+
+# ── Conda ─────────────────────────────────────────────────────
+.conda/
+
+# ── Secrets (never commit these) ──────────────────────────────
+.env
+.env.*
+secrets/
+*.pem
+*.key
+*.crt
+*.p12

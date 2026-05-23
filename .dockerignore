@@ -1,0 +1,87 @@
+# ============================================================
+# .dockerignore — RansomWatch
+# Keeps Docker build context lean and images secure.
+# Files mounted as volumes at runtime are excluded here.
+# ============================================================
+
+# ── Git ───────────────────────────────────────────────────────
+.git/
+.gitignore
+.gitattributes
+
+# ── Node.js (not needed inside Python containers) ─────────────
+node_modules/
+dist/
+dist-ssr/
+.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# ── Python caches ─────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ── Virtual environments ───────────────────────────────────────
+.venv/
+venv/
+ENV/
+env/
+.conda/
+
+# ── Runtime / generated (mounted as volumes at runtime) ────────
+test_vault/
+canary_manifest.json
+alerts.json
+alerts.tmp
+ransomware_activity.log
+ransomwatch_activity.log
+defender.log
+*.locked
+*.iv
+.daemon.pid
+.dashboard.pid
+
+# ── Secrets / env files ────────────────────────────────────────
+.env
+.env.*
+secrets/
+*.pem
+*.key
+*.crt
+
+# ── Editor / OS artefacts ──────────────────────────────────────
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+Thumbs.db
+
+# ── Documentation (not needed at runtime) ─────────────────────
+# README is kept (useful for introspection); heavy media excluded
+docs/*.png
+docs/*.mp4
+docs/*.gif
+
+# ── CI / other tooling ────────────────────────────────────────
+.github/
+.gitlab-ci.yml
+Jenkinsfile
+*.md.bak
+
+# ── Docker override files (not part of production build) ──────
+docker-compose.override.yml
+docker-compose.local.yml
