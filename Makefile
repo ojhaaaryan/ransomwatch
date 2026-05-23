@@ -9,9 +9,11 @@ PIP        := pip3
 VAULT      := test_vault
 ALERTS     := alerts.json
 LOG        := ransomwatch_activity.log
+SIM_LOG    := ransomware_activity.log
 MANIFEST   := canary_manifest.json
 DAEMON_PID := .daemon.pid
 DASH_PID   := .dashboard.pid
+UI_PID     := .ui.pid
 
 .DEFAULT_GOAL := help
 
@@ -22,14 +24,17 @@ help:
 	@echo "  ◈ RansomWatch — Canary File Detection System"
 	@echo "  ─────────────────────────────────────────────────────────"
 	@echo "  make install      → Install all Python dependencies"
-	@echo "  make setup        → Place canary files, start daemon + dashboard"
+	@echo "  make setup        → Place canary files, start daemon + Flask dashboard"
+	@echo "  make ui           → Start the React SOC dashboard (port 5173)"
+	@echo "  make dev          → setup + ui (full stack: Flask + React)"
 	@echo "  make attack       → Run simulator at NORMAL speed (350ms/file)"
 	@echo "  make attack-slow  → Run simulator at SLOW speed  (900ms/file)  ← demo"
 	@echo "  make attack-fast  → Run simulator at FAST speed  (50ms/file)"
 	@echo "  make status       → Show last 10 alerts from alerts.json"
-	@echo "  make logs         → Stream ransomwatch_activity.log"
-	@echo "  make reset        → Kill everything, delete vault, re-run setup"
-	@echo "  make demo         → Full scripted demo: setup → 3s pause → attack-slow"
+	@echo "  make logs         → Stream activity log"
+	@echo "  make stop         → Kill daemon + dashboard (no restart)"
+	@echo "  make reset        → stop + delete all runtime files"
+	@echo "  make demo         → Full scripted demo: setup → 3s → attack-slow"
 	@echo "  make integrity    → Run a one-off integrity check"
 	@echo "  make clean        → Remove generated files (not vault)"
 	@echo "  ─────────────────────────────────────────────────────────"
@@ -48,7 +53,7 @@ install:
 	$(PIP) install -r requirements.txt
 	@echo "[+] Dependencies installed."
 
-# ── Setup: place canaries, start daemon + dashboard ───────────
+# ── Setup: place canaries, start daemon + Flask dashboard ─────────
 .PHONY: setup
 setup: _ensure_deps _clean_pids
 	@echo "[*] Placing canary files..."
@@ -66,8 +71,25 @@ setup: _ensure_deps _clean_pids
 		>> $(LOG) 2>&1 & echo $$! > $(DASH_PID)
 	@sleep 1
 	@echo "[+] Dashboard started (PID $$(cat $(DASH_PID)))"
-	@echo "[+] SOC Dashboard: http://localhost:5000"
+	@echo "[+] Flask SOC Dashboard: http://localhost:5000"
 	@echo "[+] Setup complete. System ARMED."
+	@echo "    Tip: run 'make ui' in a new terminal for the React dashboard (port 5173)"
+
+# ── React UI: Vite dev server on port 5173 ───────────────────────
+.PHONY: ui
+ui:
+	@echo "[*] Starting React SOC dashboard (Vite)..."
+	@echo "[+] Open http://localhost:5173 for the full cyberpunk UI"
+	npx vite --port 5173
+
+# ── Dev: full stack (setup + React UI in parallel) ──────────────
+.PHONY: dev
+dev: setup
+	@echo "[*] Starting React SOC dashboard (Vite) in background..."
+	npx vite --port 5173 >> $(LOG) 2>&1 & echo $$! > $(UI_PID)
+	@echo "[+] React dashboard: http://localhost:5173"
+	@echo "[+] Flask API backend: http://localhost:5000"
+	@echo "[+] Full stack running. Use 'make stop' to shut down."
 
 # ── Attack: normal speed ──────────────────────────────────────
 .PHONY: attack
@@ -117,8 +139,8 @@ status:
 # ── Logs: stream activity log ─────────────────────────────────
 .PHONY: logs
 logs:
-	@echo "[*] Streaming $(LOG) (Ctrl+C to stop)..."
-	tail -f $(LOG)
+	@echo "[*] Streaming logs (Ctrl+C to stop)..."
+	tail -f $(LOG) $(SIM_LOG) 2>/dev/null
 
 # ── Integrity: one-off check ──────────────────────────────────
 .PHONY: integrity
@@ -136,17 +158,25 @@ integrity:
 	print(f'Results: {ok}/{len(results)} canaries intact'); \
 	"
 
-# ── Reset: kill everything, delete vault, re-setup ────────────
-.PHONY: reset
-reset:
-	@echo "[*] Resetting environment..."
+# ── Stop: kill services WITHOUT restarting ─────────────────────
+.PHONY: stop
+stop:
+	@echo "[*] Stopping all RansomWatch services..."
 	@-[ -f $(DAEMON_PID) ] && kill $$(cat $(DAEMON_PID)) 2>/dev/null; rm -f $(DAEMON_PID)
 	@-[ -f $(DASH_PID)   ] && kill $$(cat $(DASH_PID))   2>/dev/null; rm -f $(DASH_PID)
+	@-[ -f $(UI_PID)     ] && kill $$(cat $(UI_PID))     2>/dev/null; rm -f $(UI_PID)
 	@-pkill -f "canary_daemon.py"  2>/dev/null || true
 	@-pkill -f "dashboard/app.py"  2>/dev/null || true
-	@rm -rf $(VAULT) $(ALERTS) $(MANIFEST) $(LOG)
-	@echo "[+] Environment cleaned."
-	@$(MAKE) setup
+	@-pkill -f "vite"              2>/dev/null || true
+	@echo "[+] All services stopped."
+
+# ── Reset: stop + delete all runtime files (no auto-restart) ─────
+.PHONY: reset
+reset: stop
+	@echo "[*] Deleting all runtime files..."
+	@rm -rf $(VAULT) $(ALERTS) alerts.tmp $(MANIFEST) $(LOG) $(SIM_LOG)
+	@echo "[+] Environment fully cleaned."
+	@echo "    Run 'make setup' to re-arm.  Run 'make demo' for a full demo."
 
 # ── Demo: full scripted demo sequence ─────────────────────────
 .PHONY: demo
@@ -157,7 +187,9 @@ demo:
 	@echo "  ║   Amrita University, Bengaluru — Problem #24         ║"
 	@echo "  ╚══════════════════════════════════════════════════════╝"
 	@echo ""
-	@$(MAKE) reset
+	@$(MAKE) stop
+	@rm -rf $(VAULT) $(ALERTS) alerts.tmp $(MANIFEST) $(LOG) $(SIM_LOG)
+	@$(MAKE) setup
 	@echo "[*] Waiting 3 seconds for services to arm..."
 	@sleep 3
 	@echo "[*] Launching attack simulation (slow mode for demo)..."
@@ -202,11 +234,12 @@ _ensure_vault:
 _clean_pids:
 	@-[ -f $(DAEMON_PID) ] && kill $$(cat $(DAEMON_PID)) 2>/dev/null || true
 	@-[ -f $(DASH_PID)   ] && kill $$(cat $(DASH_PID))   2>/dev/null || true
-	@rm -f $(DAEMON_PID) $(DASH_PID)
+	@-[ -f $(UI_PID)     ] && kill $$(cat $(UI_PID))     2>/dev/null || true
+	@rm -f $(DAEMON_PID) $(DASH_PID) $(UI_PID)
 
 .PHONY: clean
 clean:
-	@rm -f $(ALERTS) $(LOG) $(DAEMON_PID) $(DASH_PID)
+	@rm -f $(ALERTS) alerts.tmp $(LOG) $(SIM_LOG) $(DAEMON_PID) $(DASH_PID) $(UI_PID)
 	@find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 	@find . -name "*.pyc" -delete 2>/dev/null || true
 	@echo "[+] Cleaned generated files."
