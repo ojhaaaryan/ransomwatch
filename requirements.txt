@@ -22,4 +22,4 @@ rich==13.7.1
 
 # ── Type stubs (optional, improves IDE support) ───────────────
 # Uncomment if you need type checking in your IDE:
-# types-psutil==5.9.5.20240516
+types-psutil==5.9.5.20240516
