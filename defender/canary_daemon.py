@@ -208,24 +208,43 @@ def kill_process(pid: int) -> bool:
         pid: Process ID to kill.
 
     Returns:
-        True if SIGKILL was sent, False if process was already dead.
+        True if SIGKILL was sent and the process exited, False otherwise.
+
+    Raises:
+        None.
     """
+    # ── Self-kill guard: never kill the daemon itself ─────────────────────────
+    if pid == os.getpid():
+        log.warning("Refusing to kill the defender process itself (PID %d)", pid)
+        return False
+
     try:
-        os.kill(pid, signal.SIGKILL)
-        log.warning("SIGKILL sent to PID %d", pid)
+        proc = psutil.Process(pid)
+        proc.kill()                     # sends SIGKILL
+        proc.wait(timeout=2.0)          # confirm it actually died
+        log.warning("SIGKILL sent to PID %d — process confirmed dead", pid)
         return True
-    except ProcessLookupError:
+    except psutil.NoSuchProcess:
         log.warning("PID %d already terminated before SIGKILL", pid)
         return False
-    except PermissionError:
+    except psutil.AccessDenied:
         log.error("Permission denied killing PID %d (need CAP_KILL)", pid)
+        return False
+    except psutil.TimeoutExpired:
+        log.error("PID %d did not die within 2s after SIGKILL", pid)
+        return False
+    except OSError as exc:
+        log.error("OS error killing PID %d: %s", pid, exc)
         return False
 
 
 # ── Alert persistence ─────────────────────────────────────────────────────────
 
 def append_alert(alert: dict[str, Any], alerts_path: Path) -> None:
-    """Append an alert to alerts.json in a thread-safe manner.
+    """Append an alert to alerts.json atomically (thread-safe).
+
+    Uses a .tmp → rename pattern so alerts.json is never left in a
+    partially-written, corrupt state if the process is killed mid-write.
 
     Args:
         alert:       The alert dictionary to append.
@@ -242,10 +261,14 @@ def append_alert(alert: dict[str, Any], alerts_path: Path) -> None:
 
         existing.append(alert)
 
-        with alerts_path.open("w") as fh:
-            json.dump(existing, fh, indent=2)
+        # ── Atomic write: write to .tmp then rename ───────────────────────────
+        # rename() is atomic on POSIX — the file is never in a partial state
+        alerts_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = alerts_path.with_suffix(".tmp")
+        tmp_path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+        tmp_path.replace(alerts_path)   # atomic on POSIX
 
-    log.info("Alert written to %s [ID: %s]", alerts_path, alert["id"])
+    log.info("Alert written atomically to %s [ID: %s]", alerts_path, alert["id"])
 
 
 # ── Rich terminal display ─────────────────────────────────────────────────────
@@ -312,26 +335,29 @@ class CanaryEventHandler(FileSystemEventHandler):
 
     def __init__(
         self,
-        canary_set:  set[str],
-        manifest:    dict[str, Any],
-        vault_root:  Path,
-        alerts_path: Path,
+        canary_set:    set[str],
+        manifest:      dict[str, Any],
+        vault_root:    Path,
+        alerts_path:   Path,
+        integrity_mon: "IntegrityMonitor",
     ) -> None:
         """Initialise the event handler.
 
         Args:
-            canary_set:  Set of absolute canary file path strings.
-            manifest:    Parsed canary_manifest.json content.
-            vault_root:  Root of the file vault.
-            alerts_path: Output path for alerts.json.
+            canary_set:    Set of absolute canary file path strings.
+            manifest:      Parsed canary_manifest.json content.
+            vault_root:    Root of the file vault.
+            alerts_path:   Output path for alerts.json.
+            integrity_mon: IntegrityMonitor instance for grace-period tracking.
         """
         super().__init__()
-        self.canary_set  = canary_set
-        self.manifest    = manifest
-        self.vault_root  = vault_root
-        self.alerts_path = alerts_path
+        self.canary_set    = canary_set
+        self.manifest      = manifest
+        self.vault_root    = vault_root
+        self.alerts_path   = alerts_path
+        self.integrity_mon = integrity_mon
         self._triggered: set[str] = set()    # Track already-alerted paths
-        self._lock       = threading.Lock()
+        self._lock         = threading.Lock()
 
     def on_any_event(self, event: FileSystemEvent) -> None:
         """Handle any filesystem event.
@@ -369,6 +395,11 @@ class CanaryEventHandler(FileSystemEventHandler):
             f"[yellow]{Path(src_path).name}[/] "
             f"— event: [cyan]{event.event_type}[/]"
         )
+
+        # ── Stamp the grace-period clock on the integrity monitor ─────────────
+        # This prevents the 30s hash-check from double-alerting on the
+        # same file access that inotify already caught.
+        self.integrity_mon.record_inotify_event(Path(src_path))
 
         # ── Find offending PID ───────────────────────────────────────────────
         pid = find_offending_pid(src_path)
@@ -491,7 +522,7 @@ def run_daemon(
     log.info("IntegrityMonitor started (30s interval)")
 
     # ── Start watchdog observer ───────────────────────────────────────────
-    handler  = CanaryEventHandler(canary_set, manifest, vault_root, alerts_path)
+    handler  = CanaryEventHandler(canary_set, manifest, vault_root, alerts_path, integrity_mon)
     observer = Observer()
     observer.schedule(handler, str(vault_root), recursive=True)
     observer.start()

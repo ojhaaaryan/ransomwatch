@@ -43,8 +43,9 @@ from typing import Any, Optional
 
 log = logging.getLogger("integrity_monitor")
 
-# ── Alert lock (shared with canary_daemon) ────────────────────────────────────
-_ALERT_LOCK = threading.Lock()
+# ── Alert lock (shared with canary_daemon) ─────────────────────────────────────────
+_ALERT_LOCK      = threading.Lock()
+_INOTIFY_LOCK    = threading.Lock()   # guards _inotify_timestamps dict
 
 
 # ── Integrity alert data structure ───────────────────────────────────────────
@@ -132,7 +133,9 @@ def sha256_file(path: Path) -> str:
 
 
 def append_alert_to_file(alert: dict[str, Any], alerts_path: Path) -> None:
-    """Thread-safe append of an alert to alerts.json.
+    """Atomic, thread-safe append of an alert to alerts.json.
+
+    Uses a .tmp → rename pattern so the file is never in a partial state.
 
     Args:
         alert:       Alert dictionary to append.
@@ -147,8 +150,10 @@ def append_alert_to_file(alert: dict[str, Any], alerts_path: Path) -> None:
             except (json.JSONDecodeError, OSError):
                 existing = []
         existing.append(alert)
-        with alerts_path.open("w") as fh:
-            json.dump(existing, fh, indent=2)
+        alerts_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = alerts_path.with_suffix(".tmp")
+        tmp_path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+        tmp_path.replace(alerts_path)   # atomic on POSIX
 
 
 class IntegrityCheck:
@@ -225,12 +230,44 @@ class IntegrityMonitor:
         canaries:       list[dict[str, Any]],
         alerts_path:    Path,
         check_interval: int = 30,
+        grace_seconds:  float = 5.0,
     ) -> None:
         self.canaries       = canaries
         self.alerts_path    = alerts_path
         self.check_interval = check_interval
+        self.grace_seconds  = grace_seconds
         self._stop_event    = threading.Event()
         self.last_results: list[IntegrityCheck] = []
+        # Maps resolved path string → monotonic time of last inotify event
+        self._inotify_timestamps: dict[str, float] = {}
+
+    def record_inotify_event(self, path: Path) -> None:
+        """Record that an inotify event fired for this canary path.
+
+        Called by canary_daemon's CanaryEventHandler so that the integrity
+        monitor can suppress duplicate alerts within the grace window.
+
+        Args:
+            path: Resolved absolute path of the triggered canary file.
+        """
+        with _INOTIFY_LOCK:
+            self._inotify_timestamps[str(path.resolve())] = time.monotonic()
+            log.debug("Grace-period clock started for %s", path.name)
+
+    def _within_grace_period(self, path: Path) -> bool:
+        """Return True if an inotify event was recorded for this path recently.
+
+        Args:
+            path: Resolved absolute path of the canary file.
+
+        Returns:
+            True if the last inotify event was within grace_seconds ago.
+        """
+        with _INOTIFY_LOCK:
+            last = self._inotify_timestamps.get(str(path.resolve()))
+        if last is None:
+            return False
+        return (time.monotonic() - last) < self.grace_seconds
 
     def stop(self) -> None:
         """Signal the monitor to stop on next iteration."""
@@ -302,14 +339,22 @@ class IntegrityMonitor:
                 )
                 results.append(result)
 
-                # Write integrity alert
-                alert = build_integrity_alert(
-                    file_path = str(path),
-                    reason    = "HASH_CHANGED",
-                    expected  = expected,
-                    actual    = actual,
-                )
-                append_alert_to_file(alert, self.alerts_path)
+                # ── Suppress if inotify already caught this event ─────────────────
+                if self._within_grace_period(path):
+                    log.info(
+                        "INTEGRITY — SUPPRESSED duplicate alert for %s "
+                        "(inotify already fired within %.0fs grace window)",
+                        path.name, self.grace_seconds,
+                    )
+                else:
+                    # Write integrity alert only if inotify did NOT catch it
+                    alert = build_integrity_alert(
+                        file_path = str(path),
+                        reason    = "HASH_CHANGED",
+                        expected  = expected,
+                        actual    = actual,
+                    )
+                    append_alert_to_file(alert, self.alerts_path)
             else:
                 log.debug("INTEGRITY — OK: %s", path.name)
                 result = IntegrityCheck(
